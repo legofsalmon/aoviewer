@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Advanced Output Viewer</title>
+<meta name="description" content="Viewer for Resolume Arena Advanced Output presets: input map, per-screen output maps, slice details and PNG test-card export.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23181b21'/><rect x='5' y='8' width='11' height='16' fill='%23ff5c5c'/><rect x='18' y='8' width='9' height='7' fill='%234f8cff'/><rect x='18' y='17' width='9' height='7' fill='%234fd28a'/></svg>">
+<style>
+:root{
+  --bg:#111317; --panel:#181b21; --panel2:#1f232b; --border:#2a2f39; --text:#e6e8ec; --muted:#8b93a3;
+  --accent:#4f8cff; --warn:#ffb454; --bad:#ff5c5c; --ok:#4fd28a;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:10px;padding:0 14px;height:48px;border-bottom:1px solid var(--border);background:var(--panel);flex:none}
+.brand{font-weight:700;white-space:nowrap}
+.brand small{color:var(--muted);font-weight:400;margin-left:6px}
+#fileName{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:32vw}
+.spacer{flex:1}
+button,select{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 10px;font:inherit;cursor:pointer}
+button:hover,select:hover{border-color:#3b4250;background:#262b35}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{background:#3f7bee}
+button.small{padding:2px 8px;font-size:11px}
+label.toggle{display:flex;align-items:center;gap:5px;color:var(--muted);cursor:pointer;white-space:nowrap;user-select:none}
+main{flex:1;display:flex;min-height:0}
+aside{width:330px;flex:none;border-right:1px solid var(--border);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+#summary{padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.5}
+#summary b{color:var(--text)}
+#summary .warns{margin-top:4px}
+#tree{flex:1;overflow:auto;min-height:0}
+#details{border-top:1px solid var(--border);max-height:44%;overflow:auto;padding:10px 12px;font-size:12px;flex:none}
+#details h3{margin:0 0 6px;font-size:13px;display:flex;align-items:center;gap:6px}
+#details table{border-collapse:collapse;width:100%}
+#details td{padding:2px 0;vertical-align:top}
+#details td:first-child{color:var(--muted);width:78px;padding-right:8px;white-space:nowrap}
+.hint{color:var(--muted)}
+.muted{color:var(--muted)}
+.screen-head{padding:6px 10px;background:var(--panel2);position:sticky;top:0;cursor:pointer;border-bottom:1px solid var(--border);z-index:1}
+.screen-head .line{display:flex;align-items:center;gap:6px}
+.screen-head .name{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.screen-head .meta{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:44px}
+.screen.collapsed .rows{display:none}
+.screen.collapsed .caret{transform:rotate(-90deg)}
+.caret{display:inline-block;transition:transform .15s;color:var(--muted);font-size:10px;width:10px}
+.row{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 20px;cursor:pointer;border-left:3px solid transparent}
+.row .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row:hover,.row.hover{background:#232833}
+.row.selected{border-left-color:var(--accent);background:#243047}
+.row.disabled .name,.screen.disabled .screen-head .name{color:var(--muted);font-style:italic}
+.row.off .name,.screen.off .screen-head .name{opacity:.45}
+.row .dim{color:var(--muted);font-size:11px;white-space:nowrap}
+.swatch{width:10px;height:10px;border-radius:2px;flex:none}
+.eye{background:none;border:none;padding:0 2px;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;flex:none}
+.eye:hover{color:var(--text);background:none}
+.eye.off{opacity:.35}
+.chip{font-size:10px;padding:1px 6px;border-radius:10px;background:#2a2f39;color:var(--muted);white-space:nowrap;flex:none}
+.chip.warn{background:#4a3a1a;color:var(--warn)}
+.chip.bad{background:#3a2020;color:var(--bad)}
+.chip.ok{background:#1d3a2a;color:var(--ok)}
+.chip.accent{background:#233252;color:#9ec0ff}
+#content{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;overflow:hidden}
+.panel.input{height:46vh;min-height:260px;flex:none}
+.screens{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:12px}
+.screens .panel{height:330px}
+.panel-head{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;flex:none;min-width:0}
+.panel-head .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel-head .sub{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel-body{flex:1;min-height:0;position:relative}
+svg.map{width:100%;height:100%;display:block;background:#0d0f13;cursor:grab;touch-action:none}
+svg.map:active{cursor:grabbing}
+.bounds{fill:#161a21;stroke:#4a5263;stroke-width:1;vector-effect:non-scaling-stroke}
+.shape{fill-opacity:var(--fill,.32);stroke-width:1.2;cursor:pointer}
+.shape.disabled{fill-opacity:.07;stroke-dasharray:5 4;stroke-opacity:.6}
+.shape.mask{fill-opacity:.12;stroke-dasharray:6 3;stroke-width:2}
+.shape.hover{fill-opacity:.5;stroke:#fff;stroke-width:2;stroke-dasharray:none}
+.shape.selected{fill-opacity:.55;stroke:#fff;stroke-width:2.5;stroke-dasharray:none}
+.shape.off,.label.off{display:none}
+.labels{pointer-events:none}
+.label text{fill:#fff;text-anchor:start;paint-order:stroke;stroke:#000;stroke-width:3px;stroke-linejoin:round;font-family:inherit}
+.label .name{font-size:12px;font-weight:600}
+.label .sub{font-size:10px;fill:#dfe3ea}
+.label.tiny{display:none}
+.label.tiny.hover,.label.tiny.selected{display:block}
+.label.nosub .sub{display:none}
+.label.nosub.hover .sub,.label.nosub.selected .sub{display:block}
+.label.disabled text{opacity:.6}
+body.no-labels .labels{display:none}
+.meshline{fill:none;stroke:#fff;stroke-opacity:.55;stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.meshdot{fill:#fff;stroke:#000;stroke-width:1;vector-effect:non-scaling-stroke}
+#empty{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+#empty .box{max-width:560px;border:2px dashed #3a4150;border-radius:14px;padding:36px;text-align:center;color:var(--muted)}
+#empty h2{color:var(--text);margin:0 0 8px}
+#empty p{margin:6px 0}
+#empty code{background:#0d0f13;padding:2px 6px;border-radius:4px;font-size:12px}
+#empty .actions{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+body.has-model #empty{display:none}
+body:not(.has-model) aside,body:not(.has-model) #content{display:none}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#242a35;border:1px solid var(--border);padding:8px 14px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.4);z-index:9;max-width:70vw}
+.toast.error{border-color:var(--bad)}
+body.dragging::after{content:'Drop the Advanced Output .xml to load it';position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(79,140,255,.15);border:3px dashed var(--accent);font-size:20px;z-index:8;pointer-events:none}
+kbd{background:#0d0f13;border:1px solid var(--border);border-radius:4px;padding:0 4px;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">AO Viewer <small>Resolume Arena Advanced Output</small></div>
+  <span id="fileName"></span>
+  <div class="spacer"></div>
+  <label class="toggle"><input type="checkbox" id="optLabels" checked> Labels</label>
+  <label class="toggle"><input type="checkbox" id="optDisabled" checked> Show disabled</label>
+  <button id="btnFit" title="Fit all views (F)">Fit all</button>
+  <button class="primary" id="btnOpen">Open XML…</button>
+  <input type="file" id="fileInput" accept=".xml,text/xml,application/xml" hidden>
+</header>
+<main>
+  <aside>
+    <div id="summary"></div>
+    <div id="tree"></div>
+    <div id="details"></div>
+  </aside>
+  <div id="empty">
+    <div class="box">
+      <h2>Drop an Advanced Output preset here</h2>
+      <p>Resolume Arena saves them as <code>.xml</code> in<br><code>~/Documents/Resolume Arena/Presets/Advanced Output/</code></p>
+      <p>The live setup is also readable from <code>~/Documents/Resolume Arena/Preferences/AdvancedOutput.xml</code></p>
+      <div class="actions">
+        <button class="primary" id="btnOpen2">Open XML…</button>
+      </div>
+      <p style="font-size:12px">Nothing is uploaded: the file is parsed in your browser.</p>
+      <p style="margin-top:18px;font-size:12px">Drag to pan · <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + wheel or pinch to zoom · double-click to fit · <kbd>F</kbd> fit all · <kbd>Esc</kbd> clear selection</p>
+    </div>
+  </div>
+  <div id="content"></div>
+</main>
+<script>
+'use strict';
+/* =========================================================================
+   Helpers
+   ========================================================================= */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const $ = (sel, el = document) => el.querySelector(sel);
+const num = (v, d = 0) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
+const bool = v => v === '1' || v === 'true' || v === true;
+const child = (el, tag) => { if (!el) return null; for (const c of el.children) if (c.tagName === tag) return c; return null; };
+const childrenOf = (el, tag) => el ? [...el.children].filter(c => c.tagName === tag) : [];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function paramValue(el, group, name, def) {
+  for (const p of el.children) {
+    if (p.tagName !== 'Params' || p.getAttribute('name') !== group) continue;
+    for (const q of p.children) {
+      if (q.getAttribute('name') === name) { const v = q.getAttribute('value'); return v == null ? def : v; }
+    }
+  }
+  return def;
+}
+const pointsOf = el => el ? childrenOf(el, 'v').map(v => ({ x: num(v.getAttribute('x')), y: num(v.getAttribute('y')) })) : [];
+function bboxOf(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) { if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+function unionBox(a, b) {
+  if (!a) return b; if (!b) return a;
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+function centroid(pts) { let x = 0, y = 0; for (const p of pts) { x += p.x; y += p.y; } return { x: x / pts.length, y: y / pts.length }; }
+function outsideBox(bb, bounds, tol = 0.5) {
+  return bb.x < bounds.x - tol || bb.y < bounds.y - tol || bb.x + bb.w > bounds.x + bounds.w + tol || bb.y + bb.h > bounds.y + bounds.h + tol;
+}
+function fmt(n) {
+  if (!Number.isFinite(n)) return '–';
+  const r = Math.round(n); if (Math.abs(n - r) < 0.01) return String(r);
+  return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+const fmtI = n => Number.isFinite(n) ? String(Math.round(n)) : '–'; // whole pixels, for labels
+const deg = rad => Math.round(rad * 180 / Math.PI * 100) / 100;
+const safeName = s => String(s).replace(/[\\/:*?"<>|]+/g, '-').trim() || 'export';
+// Greedy label placement: push each rect down until it no longer overlaps an earlier one (rects are mutated).
+function resolveOverlaps(rects, gap = 2) {
+  const placed = [];
+  for (const r of rects) {
+    for (let guard = 0; guard < 300; guard++) {
+      const hit = placed.find(q => r.x < q.x + q.w + gap && r.x + r.w + gap > q.x && r.y < q.y + q.h + gap && r.y + r.h + gap > q.y);
+      if (!hit) break;
+      r.y = hit.y + hit.h + gap;
+    }
+    placed.push(r);
+  }
+}
+
+/* =========================================================================
+   Parsing – Resolume Arena Advanced Output XML
+   Handles both the preset format (<XmlState><ScreenSetup>…) and the
+   stripped Preferences/AdvancedOutput.xml format (<ScreenSetup> root, defaults omitted).
+   ========================================================================= */
+function parseAdvancedOutput(text, fileName) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const perr = doc.querySelector('parsererror');
+  if (perr) throw new Error('not valid XML (' + perr.textContent.replace(/\s+/g, ' ').slice(0, 120) + '…)');
+  const root = doc.documentElement;
+  let setup, name, format;
+  if (root.tagName === 'XmlState') { setup = child(root, 'ScreenSetup'); name = root.getAttribute('name') || ''; format = 'preset'; }
+  else if (root.tagName === 'ScreenSetup') { setup = root; format = 'preferences'; }
+  else throw new Error(`unexpected root element <${root.tagName}> – expected a Resolume Advanced Output preset`);
+  if (!setup) throw new Error('no <ScreenSetup> element found');
+  if (!name) name = (fileName || 'Advanced Output').replace(/\.xml$/i, '');
+  const vi = child(root, 'versionInfo') || child(setup, 'versionInfo');
+  const version = vi ? `${vi.getAttribute('name') || 'Resolume'} ${vi.getAttribute('majorVersion')}.${vi.getAttribute('minorVersion')}.${vi.getAttribute('microVersion')}` : 'unknown version';
+  const cs = child(setup, 'CurrentCompositionTextureSize');
+  const comp = { w: num(cs && cs.getAttribute('width'), 0), h: num(cs && cs.getAttribute('height'), 0) };
+  const screens = childrenOf(child(setup, 'screens'), 'Screen').map(parseScreen);
+  return { name, version, comp, format, screens, fileName };
+}
+
+function parseScreen(el, idx) {
+  const name = paramValue(el, 'Params', 'Name', el.getAttribute('name') || `Screen ${idx + 1}`);
+  const enabled = bool(paramValue(el, 'Params', 'Enabled', '1'));
+  const hidden = bool(paramValue(el, 'Params', 'Hidden', '0'));
+  const opacity = num(paramValue(el, 'Output', 'Opacity', '1'), 1);
+  const devWrap = child(el, 'OutputDevice');
+  const devEl = devWrap && devWrap.firstElementChild;
+  let device = null;
+  if (devEl) {
+    const tag = devEl.tagName;
+    let w = num(devEl.getAttribute('width'), 0), h = num(devEl.getAttribute('height'), 0);
+    if (!(w > 0 && h > 0)) { w = num(paramValue(devEl, 'Params', 'Width', w), w); h = num(paramValue(devEl, 'Params', 'Height', h), h); }
+    device = { tag, type: tag.replace(/^OutputDevice/, '') || tag, name: devEl.getAttribute('name') || '', deviceId: devEl.getAttribute('deviceId') || '', w, h, fullscreen: devEl.getAttribute('fullscreen') === '1' };
+  }
+  const layers = [...(child(el, 'layers') ? child(el, 'layers').children : [])].map(parseLayer);
+  return { uniqueId: el.getAttribute('uniqueId'), name, enabled, hidden, opacity, device, layers };
+}
+
+function parseRect(el) {
+  if (!el) return null;
+  const pts = pointsOf(el);
+  if (pts.length < 3) return null;
+  const bb = bboxOf(pts);
+  return {
+    pts, rot: num(el.getAttribute('orientation'), 0), bbox: bb,
+    w: dist(pts[0], pts[1]), h: dist(pts[1], pts[2]),
+    normalized: pts.every(p => Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1),
+  };
+}
+
+function decodeSource(raw) {
+  const m = /^(\d+):(\d+)$/.exec(raw || '');
+  if (!m) return { raw, kind: 'unknown', label: raw || 'Composition' };
+  const ns = +m[1], idx = +m[2];
+  if (ns === 0) return { raw, kind: 'composition', label: 'Composition' };
+  if (ns === 1) return { raw, kind: 'group', index: idx, label: `Group ${idx}` };
+  if (ns === 3) return { raw, kind: 'layer', index: idx, label: `Layer ${idx}` };
+  return { raw, kind: 'other', label: `Source ${raw}` };
+}
+
+function parseLayer(el, idx) {
+  const kind = el.tagName;
+  const L = {
+    kind, uniqueId: el.getAttribute('uniqueId'),
+    name: paramValue(el, 'Common', 'Name', `${kind} ${idx + 1}`),
+    enabled: bool(paramValue(el, 'Common', 'Enabled', '1')),
+    source: decodeSource(paramValue(el, 'Input', 'Input Source', '0:1')),
+    inputOpacity: bool(paramValue(el, 'Input', 'Input Opacity', '1')),
+    inputBypass: bool(paramValue(el, 'Input', 'Input Bypass/Solo', '1')),
+    softEdge: bool(paramValue(el, 'Input', 'SoftEdgeEnable', '0')),
+    flip: num(paramValue(el, 'Output', 'Flip', '0'), 0),
+    isKey: bool(paramValue(el, 'Output', 'Is Key', '0')),
+    blackBg: bool(paramValue(el, 'Output', 'Black BG', '0')),
+    invert: bool(paramValue(el, 'Output', 'Invert', '0')),
+    input: parseRect(child(el, 'InputRect')),
+    output: parseRect(child(el, 'OutputRect')),
+    warp: null, homography: null, contour: null,
+  };
+  const warperEl = child(el, 'Warper');
+  if (warperEl) {
+    const bw = child(warperEl, 'BezierWarper');
+    if (bw) {
+      L.warp = { mode: paramValue(warperEl, 'Warper', 'Point Mode', 'PM_LINEAR'), cols: num(bw.getAttribute('controlWidth'), 4), rows: num(bw.getAttribute('controlHeight'), 4), verts: pointsOf(child(bw, 'vertices')) };
+      Object.assign(L.warp, analyzeWarp(L.warp));
+    }
+    const hg = child(warperEl, 'Homography');
+    if (hg) {
+      const src = pointsOf(child(hg, 'src')), dst = pointsOf(child(hg, 'dst'));
+      let dev = 0; src.forEach((p, i) => { if (dst[i]) dev = Math.max(dev, dist(p, dst[i])); });
+      L.homography = { src, dst, edited: dev > 0.5 };
+    }
+  }
+  const shapeObj = child(el, 'ShapeObject');
+  if (shapeObj) {
+    const c = child(child(shapeObj, 'Shape'), 'Contour');
+    if (c) {
+      const points = pointsOf(child(c, 'points'));
+      const seg = child(c, 'segments');
+      if (points.length >= 3) L.contour = { points, segments: seg ? seg.textContent.trim() : '', closed: c.getAttribute('closed') !== '0' };
+    }
+    if (!L.contour) { const r = parseRect(child(shapeObj, 'Rect')); if (r) L.contour = { points: r.pts, segments: 'LLLL', closed: true }; }
+  }
+  return L;
+}
+
+function analyzeWarp(w) {
+  const { cols, rows, verts } = w;
+  if (cols < 2 || rows < 2 || verts.length !== cols * rows) return { valid: false, edited: false, dev: 0 };
+  const c00 = verts[0], c10 = verts[cols - 1], c01 = verts[(rows - 1) * cols], c11 = verts[rows * cols - 1];
+  let dev = 0;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const u = i / (cols - 1), t = j / (rows - 1);
+    const ex = (1 - u) * (1 - t) * c00.x + u * (1 - t) * c10.x + (1 - u) * t * c01.x + u * t * c11.x;
+    const ey = (1 - u) * (1 - t) * c00.y + u * (1 - t) * c10.y + (1 - u) * t * c01.y + u * t * c11.y;
+    const v = verts[j * cols + i];
+    dev = Math.max(dev, Math.abs(v.x - ex), Math.abs(v.y - ey));
+  }
+  return { valid: true, edited: dev > 0.5, dev };
+}
+
+/* ---- geometry derived from a layer ---- */
+function bezierThrough(ctrl, samples = 12) {
+  // piecewise cubic Bézier: groups of 4 control points sharing end points (4, 7, 10 … points)
+  const n = ctrl.length;
+  if ((n - 1) % 3 !== 0) return ctrl.slice();
+  const out = [];
+  for (let s = 0; s + 3 < n; s += 3) {
+    const [p0, p1, p2, p3] = [ctrl[s], ctrl[s + 1], ctrl[s + 2], ctrl[s + 3]];
+    for (let k = 0; k < samples; k++) {
+      const t = k / samples, mt = 1 - t, a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
+      out.push({ x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y });
+    }
+  }
+  return out;
+}
+function meshBoundary(w) {
+  const { cols, rows, verts } = w; const at = (i, j) => verts[j * cols + i];
+  const top = [], right = [], bottom = [], left = [];
+  for (let i = 0; i < cols; i++) top.push(at(i, 0));
+  for (let j = 0; j < rows; j++) right.push(at(cols - 1, j));
+  for (let i = cols - 1; i >= 0; i--) bottom.push(at(i, rows - 1));
+  for (let j = rows - 1; j >= 0; j--) left.push(at(0, j));
+  if (w.mode === 'PM_BEZIER') return [...bezierThrough(top), ...bezierThrough(right), ...bezierThrough(bottom), ...bezierThrough(left)];
+  return [...top, ...right.slice(1), ...bottom.slice(1), ...left.slice(1, -1)];
+}
+function meshLines(w) {
+  const { cols, rows, verts } = w; const at = (i, j) => verts[j * cols + i]; const lines = [];
+  const curve = l => w.mode === 'PM_BEZIER' ? [...bezierThrough(l), l[l.length - 1]] : l;
+  for (let j = 0; j < rows; j++) { const l = []; for (let i = 0; i < cols; i++) l.push(at(i, j)); lines.push(curve(l)); }
+  for (let i = 0; i < cols; i++) { const l = []; for (let j = 0; j < rows; j++) l.push(at(i, j)); lines.push(curve(l)); }
+  return lines;
+}
+function outputPolygon(L) {
+  if (L.contour) return L.contour.points;
+  if (L.warp && L.warp.valid) return meshBoundary(L.warp);
+  if (L.output) return L.output.pts;
+  return null;
+}
+function scaleInfo(L) {
+  if (!L.input || !L.output || L.kind === 'Mask' || L.input.normalized || L.input.w <= 0 || L.input.h <= 0) return null;
+  const sx = L.output.w / L.input.w, sy = L.output.h / L.input.h;
+  const one = v => Math.abs(v - 1) < 0.005;
+  let tag = '1:1';
+  if (!(one(sx) && one(sy))) tag = Math.abs(sx - sy) > 0.01 ? 'non-uniform' : (sx > 1 ? 'upscaled' : 'downscaled');
+  return { sx, sy, tag };
+}
+
+/* =========================================================================
+   Model – ids, colours, derived polygons, warnings
+   ========================================================================= */
+const HUES = [0, 215, 130, 38, 275, 185, 320, 62, 250, 100, 20, 160];
+
+function buildModel(m) {
+  m.byId = new Map();
+  let inUnion = null;
+  m.screens.forEach((s, si) => {
+    s.id = 's' + si; s.index = si; s.hue = HUES[si % HUES.length];
+    let outUnion = null;
+    s.layers.forEach((L, li) => {
+      L.id = `${si}.${li}`; L.screen = s; L.index = li;
+      L.hue = (s.hue + (li % 4) * 6) % 360;
+      L.color = `hsl(${L.hue} 85% ${50 + (li % 3) * 5}%)`;
+      L.active = L.enabled && s.enabled;
+      L.inPoly = (L.input && !L.input.normalized && L.kind !== 'Mask') ? L.input.pts : null;
+      L.outPoly = outputPolygon(L);
+      if (L.inPoly) inUnion = unionBox(inUnion, bboxOf(L.inPoly));
+      if (L.outPoly) outUnion = unionBox(outUnion, bboxOf(L.outPoly));
+      L.scale = scaleInfo(L);
+      m.byId.set(L.id, L);
+    });
+    const d = s.device;
+    s.bounds = (d && d.w > 0 && d.h > 0) ? { x: 0, y: 0, w: d.w, h: d.h } : (outUnion || { x: 0, y: 0, w: m.comp.w || 1920, h: m.comp.h || 1080 });
+    s.boundsDerived = !(d && d.w > 0 && d.h > 0);
+  });
+  if (!(m.comp.w > 0 && m.comp.h > 0)) {
+    m.comp = inUnion ? { w: Math.max(1, inUnion.x + inUnion.w), h: Math.max(1, inUnion.y + inUnion.h) } : { w: 1920, h: 1080 };
+    m.compDerived = true;
+  }
+  m.compBounds = { x: 0, y: 0, w: m.comp.w, h: m.comp.h };
+  for (const L of m.byId.values()) {
+    L.inOutside = L.inPoly ? outsideBox(bboxOf(L.inPoly), m.compBounds) : false;
+    L.outOutside = L.outPoly ? outsideBox(bboxOf(L.outPoly), L.screen.bounds) : false;
+  }
+  const all = [...m.byId.values()];
+  m.stats = {
+    screens: m.screens.length,
+    slices: all.filter(L => L.kind === 'Slice').length,
+    masks: all.filter(L => L.kind === 'Mask').length,
+    other: all.filter(L => L.kind !== 'Slice' && L.kind !== 'Mask').length,
+    disabled: all.filter(L => !L.active).length,
+    outside: all.filter(L => L.active && (L.inOutside || L.outOutside)).length,
+    scaled: all.filter(L => L.active && L.scale && L.scale.tag !== '1:1').length,
+    warped: all.filter(L => (L.warp && L.warp.edited) || (L.homography && L.homography.edited)).length,
+  };
+  return m;
+}
+
+/* =========================================================================
+   App state & UI
+   ========================================================================= */
+const state = { model: null, hover: null, selected: null, hidden: new Set(), hiddenScreens: new Set(), showLabels: true, showDisabled: true, panels: [] };
+
+function deviceLabel(s) {
+  const d = s.device; if (!d) return 'no output device';
+  const type = d.type === 'Virtual' ? 'Virtual' : d.type === 'Display' ? 'Display' : d.type;
+  const parts = [type];
+  if (d.name && d.name !== s.name) parts.push(d.name);
+  parts.push(`${fmt(d.w)}×${fmt(d.h)}`);
+  if (d.fullscreen) parts.push('fullscreen');
+  return parts.join(' · ');
+}
+function isVisible(L) {
+  if (state.hidden.has(L.id) || state.hiddenScreens.has(L.screen.id)) return false;
+  if (!state.showDisabled && !L.active) return false;
+  return true;
+}
+
+function setModel(model) {
+  state.model = model; state.hover = null; state.selected = null;
+  state.hidden = new Set(); state.hiddenScreens = new Set(); state.panels = [];
+  document.body.classList.add('has-model');
+  $('#fileName').textContent = model.fileName || model.name;
+  document.title = `${model.name} – AO Viewer`;
+  buildSummary(); buildTree(); buildPanels();
+  applyVisibility(); applyHighlight();
+}
+
+function buildSummary() {
+  const m = state.model, st = m.stats;
+  const warns = [];
+  if (st.disabled) warns.push(`${st.disabled} disabled`);
+  if (st.outside) warns.push(`<span class="chip warn">${st.outside} outside bounds</span>`);
+  if (st.scaled) warns.push(`<span class="chip warn">${st.scaled} scaled (not 1:1)</span>`);
+  if (st.warped) warns.push(`<span class="chip accent">${st.warped} warped</span>`);
+  if (m.compDerived) warns.push(`<span class="chip warn">composition size derived from slices</span>`);
+  const kinds = [`${st.slices} slice${st.slices === 1 ? '' : 's'}`];
+  if (st.masks) kinds.push(`${st.masks} mask${st.masks === 1 ? '' : 's'}`);
+  if (st.other) kinds.push(`${st.other} other`);
+  $('#summary').innerHTML = `
+    <div><b>${esc(m.name)}</b> <span class="chip">${m.format}</span></div>
+    <div>${esc(m.version)}</div>
+    <div>Composition <b>${fmt(m.comp.w)} × ${fmt(m.comp.h)}</b> · ${st.screens} screen${st.screens === 1 ? '' : 's'} · ${kinds.join(' · ')}</div>
+    ${warns.length ? `<div class="warns">${warns.join(' ')}</div>` : ''}`;
+}
+
+function buildTree() {
+  const m = state.model;
+  $('#tree').innerHTML = m.screens.map(s => `
+    <div class="screen${s.enabled ? '' : ' disabled'}" data-sid="${s.id}">
+      <div class="screen-head">
+        <div class="line">
+          <span class="caret">▼</span>
+          <button class="eye" data-screen-eye="${s.id}" title="Show / hide this screen">👁</button>
+          <span class="swatch" style="background:hsl(${s.hue} 85% 55%)"></span>
+          <span class="name" title="${esc(s.name)}">${esc(s.name)}</span>
+          <span class="chip" title="Items on this screen">${s.layers.length}</span>
+          ${s.enabled ? '' : '<span class="chip bad">disabled</span>'}${s.hidden ? '<span class="chip">hidden</span>' : ''}
+        </div>
+        <div class="meta">${esc(deviceLabel(s))}</div>
+      </div>
+      <div class="rows">${s.layers.map(L => `
+        <div class="row${L.active ? '' : ' disabled'}" data-id="${L.id}" title="${esc(L.name)}">
+          <button class="eye" data-eye="${L.id}" title="Show / hide">👁</button>
+          <span class="swatch" style="background:${L.color}"></span>
+          <span class="name">${esc(L.name)}</span>
+          ${L.kind !== 'Slice' ? `<span class="chip accent">${esc(L.kind.toLowerCase())}</span>` : ''}
+          ${L.kind === 'Mask' || L.source.kind === 'composition' ? '' : `<span class="chip accent">${esc(L.source.label)}</span>`}
+          ${(L.inOutside || L.outOutside) ? '<span class="chip warn" title="Outside the composition or screen bounds">⚠</span>' : ''}
+          ${L.scale && L.scale.tag !== '1:1' ? `<span class="chip warn" title="Output size differs from input size">${esc(L.scale.tag)}</span>` : ''}
+          <span class="dim">${L.output ? `${fmt(L.output.w)}×${fmt(L.output.h)}` : ''}</span>
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function buildPanels() {
+  const m = state.model, content = $('#content');
+  content.innerHTML = '';
+  const byArea = (a, b) => (b.bb.w * b.bb.h) - (a.bb.w * a.bb.h);
+  const mk = (L, poly) => ({ layer: L, poly, bb: bboxOf(poly), c: centroid(poly) });
+  const inputItems = [];
+  for (const s of m.screens) for (const L of s.layers) if (L.inPoly) inputItems.push(mk(L, L.inPoly));
+  inputItems.sort(byArea);
+  state.panels.push(createPanel(content, { kind: 'input', title: 'Input · Composition', subtitle: `${fmt(m.comp.w)} × ${fmt(m.comp.h)} px`, bounds: m.compBounds, items: inputItems, exportLabel: 'Export input map PNG' }));
+  const grid = document.createElement('div'); grid.className = 'screens'; content.appendChild(grid);
+  for (const s of m.screens) {
+    const items = s.layers.filter(L => L.outPoly).map(L => mk(L, L.outPoly)).sort(byArea);
+    state.panels.push(createPanel(grid, { kind: 'output', title: s.name, subtitle: deviceLabel(s) + (s.boundsDerived ? ' (bounds derived from slices)' : ''), bounds: s.bounds, items, screen: s, exportLabel: 'Export PNG' }));
+  }
+}
+
+function createPanel(parent, opts) {
+  const el = document.createElement('section');
+  el.className = 'panel ' + opts.kind;
+  const chips = [];
+  if (opts.screen && !opts.screen.enabled) chips.push('<span class="chip bad">disabled</span>');
+  if (opts.screen && opts.screen.hidden) chips.push('<span class="chip">hidden</span>');
+  el.innerHTML = `
+    <div class="panel-head">
+      ${opts.screen ? `<span class="swatch" style="background:hsl(${opts.screen.hue} 85% 55%)"></span>` : ''}
+      <span class="title" title="${esc(opts.title)}">${esc(opts.title)}</span>
+      <span class="sub">${esc(opts.subtitle)}</span>${chips.join('')}
+      <span class="spacer"></span>
+      <span class="sub">${opts.items.length} item${opts.items.length === 1 ? '' : 's'}</span>
+      <button class="small" data-act="zoomout" title="Zoom out (⌘/Ctrl + wheel also zooms)">−</button>
+      <button class="small" data-act="zoomin" title="Zoom in (⌘/Ctrl + wheel also zooms)">+</button>
+      <button class="small" data-act="fit" title="Fit (double-click the view)">Fit</button>
+      <button class="small" data-act="export" title="Render this map as a full-resolution PNG">${esc(opts.exportLabel)}</button>
+    </div>
+    <div class="panel-body">
+      <svg class="map"><g class="world"><rect class="bounds"/><g class="shapes"></g><g class="mesh"></g></g><g class="labels"></g></svg>
+    </div>`;
+  parent.appendChild(el);
+  const svg = $('svg', el), world = $('.world', el), shapes = $('.shapes', el), mesh = $('.mesh', el), labels = $('.labels', el), boundsRect = $('.bounds', el);
+  const p = { el, svg, world, shapes, mesh, labels, opts, s: 1, fitScale: 1, tx: 0, ty: 0, W: 0, H: 0, byId: new Map() };
+
+  let box = { ...opts.bounds };
+  for (const it of opts.items) box = unionBox(box, it.bb);
+  p.worldBox = box;
+  boundsRect.setAttribute('x', opts.bounds.x); boundsRect.setAttribute('y', opts.bounds.y);
+  boundsRect.setAttribute('width', opts.bounds.w); boundsRect.setAttribute('height', opts.bounds.h);
+  if (opts.items.length > 20) el.style.setProperty('--fill', clamp(0.32 * 20 / opts.items.length, 0.04, 0.32).toFixed(3));
+
+  for (const it of opts.items) {
+    const L = it.layer;
+    const poly = document.createElementNS(SVGNS, 'polygon');
+    poly.setAttribute('points', it.poly.map(q => `${q.x},${q.y}`).join(' '));
+    poly.setAttribute('fill', L.color); poly.setAttribute('stroke', L.color);
+    poly.setAttribute('vector-effect', 'non-scaling-stroke');
+    poly.classList.add('shape'); poly.dataset.id = L.id;
+    if (!L.active) poly.classList.add('disabled');
+    if (L.kind === 'Mask') poly.classList.add('mask');
+    shapes.appendChild(poly);
+
+    const g = document.createElementNS(SVGNS, 'g');
+    g.classList.add('label'); g.dataset.id = L.id;
+    if (!L.active) g.classList.add('disabled');
+    const t1 = document.createElementNS(SVGNS, 'text'); t1.classList.add('name'); t1.textContent = L.name + (L.active ? '' : ' (off)');
+    const t2 = document.createElementNS(SVGNS, 'text'); t2.classList.add('sub'); t2.setAttribute('y', 13); t2.textContent = subLabel(L, opts.kind, it.bb);
+    g.append(t1, t2); labels.appendChild(g);
+    p.byId.set(L.id, { poly, label: g, bb: it.bb, c: it.c, nameLen: t1.textContent.length, subLen: t2.textContent.length });
+  }
+
+  p.update = () => {
+    world.setAttribute('transform', `translate(${p.tx} ${p.ty}) scale(${p.s})`);
+    const rects = []; // labels anchored top-left of their shape; visible ones are pushed apart
+    for (const e of p.byId.values()) {
+      const pw = e.bb.w * p.s, ph = e.bb.h * p.s;
+      const needName = e.nameLen * 6.8 + 10, needSub = e.subLen * 5.2 + 10;
+      const fitsName = pw >= needName && ph >= 16;           // name only
+      const fitsSub = fitsName && pw >= needSub && ph >= 30; // name + position/size line
+      e.label.classList.toggle('tiny', !fitsName);
+      e.label.classList.toggle('nosub', !fitsSub);
+      e.rect = { x: e.bb.x * p.s + p.tx + 6, y: e.bb.y * p.s + p.ty + 4, w: fitsSub ? Math.max(needName, needSub) : needName, h: fitsSub ? 26 : 14 };
+      if (fitsName && !e.poly.classList.contains('off')) rects.push(e.rect);
+    }
+    resolveOverlaps(rects);
+    for (const e of p.byId.values()) e.label.setAttribute('transform', `translate(${e.rect.x} ${e.rect.y + 11})`);
+  };
+  p.fit = () => {
+    const m = 20, b = p.worldBox;
+    if (!p.W || !p.H || !(b.w > 0) || !(b.h > 0)) return;
+    p.s = p.fitScale = Math.min((p.W - 2 * m) / b.w, (p.H - 2 * m) / b.h);
+    p.tx = (p.W - b.w * p.s) / 2 - b.x * p.s; p.ty = (p.H - b.h * p.s) / 2 - b.y * p.s;
+    p.update();
+  };
+  new ResizeObserver(() => {
+    const r = svg.getBoundingClientRect();
+    if (r.width !== p.W || r.height !== p.H) { p.W = r.width; p.H = r.height; p.fit(); }
+  }).observe(svg);
+
+  /* pan / zoom / pick */
+  let drag = null;
+  const hitId = t => { const h = t && t.closest ? t.closest('[data-id]') : null; return h ? h.dataset.id : null; };
+  svg.addEventListener('pointerdown', e => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, tx: p.tx, ty: p.ty, moved: false, hit: hitId(e.target) }; svg.setPointerCapture(e.pointerId); });
+  svg.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+    drag.moved = true; p.tx = drag.tx + dx; p.ty = drag.ty + dy; p.update();
+  });
+  svg.addEventListener('pointerup', () => { if (!drag) return; const d = drag; drag = null; if (d.moved) return; setSelected(d.hit && d.hit !== state.selected ? d.hit : null); });
+  svg.addEventListener('pointercancel', () => { drag = null; });
+  p.zoomBy = (k, mx = p.W / 2, my = p.H / 2) => {
+    const ns = clamp(p.s * k, p.fitScale * 0.2, p.fitScale * 400), kk = ns / p.s;
+    p.tx = mx - (mx - p.tx) * kk; p.ty = my - (my - p.ty) * kk; p.s = ns; p.update();
+  };
+  svg.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey)) return; // plain wheel scrolls the page; ⌘/Ctrl + wheel (or trackpad pinch) zooms
+    e.preventDefault();
+    const r = svg.getBoundingClientRect();
+    p.zoomBy(Math.exp(-clamp(e.deltaY, -50, 50) * 0.01), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  svg.addEventListener('dblclick', () => p.fit());
+  svg.addEventListener('pointerover', e => { const id = hitId(e.target); if (id) setHover(id); });
+  svg.addEventListener('pointerout', e => { const id = hitId(e.target); if (id && state.hover === id) setHover(null); });
+  el.querySelector('[data-act="fit"]').addEventListener('click', () => p.fit());
+  el.querySelector('[data-act="zoomin"]').addEventListener('click', () => p.zoomBy(1.5));
+  el.querySelector('[data-act="zoomout"]').addEventListener('click', () => p.zoomBy(1 / 1.5));
+  el.querySelector('[data-act="export"]').addEventListener('click', () => exportPanel(p));
+  return p;
+}
+
+function subLabel(L, kind, bb) {
+  if (kind === 'input') return `${fmtI(bb.x)}, ${fmtI(bb.y)} · ${fmtI(L.input.w)}×${fmtI(L.input.h)}${L.input.rot ? ` · ${Math.round(deg(L.input.rot))}°` : ''}`;
+  if (L.kind === 'Mask') return `mask · ${L.contour ? L.contour.points.length + ' pts' : ''}`;
+  if (L.output) return `${fmtI(bb.x)}, ${fmtI(bb.y)} · ${fmtI(L.output.w)}×${fmtI(L.output.h)}${L.output.rot ? ` · ${Math.round(deg(L.output.rot))}°` : ''}`;
+  return `${fmtI(bb.x)}, ${fmtI(bb.y)} · ${fmtI(bb.w)}×${fmtI(bb.h)}`;
+}
+
+/* ---- highlight / visibility ---- */
+function setHover(id) { if (state.hover === id) return; state.hover = id; applyHighlight(); }
+function setSelected(id) { state.selected = id; applyHighlight(); }
+function applyHighlight() {
+  for (const p of state.panels) {
+    for (const [id, e] of p.byId) {
+      const h = id === state.hover, s = id === state.selected;
+      e.poly.classList.toggle('hover', h); e.poly.classList.toggle('selected', s);
+      e.label.classList.toggle('hover', h); e.label.classList.toggle('selected', s);
+      if (h || s) { p.shapes.appendChild(e.poly); p.labels.appendChild(e.label); }
+    }
+    renderMesh(p);
+  }
+  for (const row of document.querySelectorAll('#tree .row')) {
+    row.classList.toggle('hover', row.dataset.id === state.hover);
+    row.classList.toggle('selected', row.dataset.id === state.selected);
+  }
+  renderDetails();
+}
+function renderMesh(p) {
+  p.mesh.innerHTML = '';
+  const id = state.selected || state.hover;
+  if (!id || p.opts.kind !== 'output') return;
+  const L = state.model.byId.get(id);
+  if (!L || L.screen !== p.opts.screen || !L.warp || !L.warp.valid || !isVisible(L)) return;
+  for (const line of meshLines(L.warp)) {
+    const pl = document.createElementNS(SVGNS, 'polyline');
+    pl.setAttribute('points', line.map(q => `${q.x},${q.y}`).join(' ')); pl.classList.add('meshline'); p.mesh.appendChild(pl);
+  }
+  for (const v of L.warp.verts) {
+    const c = document.createElementNS(SVGNS, 'circle');
+    c.setAttribute('cx', v.x); c.setAttribute('cy', v.y); c.setAttribute('r', 3 / p.s); c.classList.add('meshdot'); p.mesh.appendChild(c);
+  }
+}
+function applyVisibility() {
+  const m = state.model; if (!m) return;
+  for (const p of state.panels) for (const [id, e] of p.byId) {
+    const v = isVisible(m.byId.get(id));
+    e.poly.classList.toggle('off', !v); e.label.classList.toggle('off', !v);
+  }
+  for (const row of document.querySelectorAll('#tree .row')) {
+    const L = m.byId.get(row.dataset.id);
+    row.classList.toggle('off', !isVisible(L));
+    $('.eye', row).classList.toggle('off', state.hidden.has(L.id));
+  }
+  for (const sc of document.querySelectorAll('#tree .screen')) {
+    sc.classList.toggle('off', state.hiddenScreens.has(sc.dataset.sid));
+    $('.eye', sc).classList.toggle('off', state.hiddenScreens.has(sc.dataset.sid));
+  }
+  document.body.classList.toggle('no-labels', !state.showLabels);
+  for (const p of state.panels) { p.update(); renderMesh(p); }
+}
+
+/* ---- details ---- */
+function renderDetails() {
+  const el = $('#details'), id = state.hover || state.selected, m = state.model;
+  if (!m) { el.innerHTML = ''; return; }
+  if (!id) { el.innerHTML = '<div class="hint">Hover a slice for details, click to pin it.</div>'; return; }
+  const L = m.byId.get(id); if (!L) return;
+  const S = L.screen, rows = [];
+  const rectText = (r, bb, outside, what) => r ? `${fmt(bb.x)}, ${fmt(bb.y)} &nbsp;·&nbsp; ${fmt(r.w)} × ${fmt(r.h)}${r.rot ? ` &nbsp;·&nbsp; rotated ${deg(r.rot)}°` : ''}${outside ? ` <span class="chip warn">outside ${what}</span>` : ''}` : '<span class="muted">–</span>';
+  rows.push(['Type', `${L.kind}${L.kind === 'Mask' && L.invert ? ' (inverted)' : ''}`]);
+  rows.push(['Screen', `${esc(S.name)}${S.enabled ? '' : ' <span class="chip bad">disabled</span>'} <span class="muted">${esc(deviceLabel(S))}</span>`]);
+  rows.push(['Enabled', L.enabled ? 'Yes' : '<span class="chip bad">No</span>']);
+  if (L.kind !== 'Mask') rows.push(['Source', `${esc(L.source.label)} <span class="muted">(${esc(L.source.raw)})</span>`]);
+  if (L.kind !== 'Mask') rows.push(['Input', L.inPoly ? rectText(L.input, bboxOf(L.inPoly), L.inOutside, 'composition') : '<span class="muted">–</span>']);
+  rows.push(['Output', L.outPoly ? rectText(L.output || { w: bboxOf(L.outPoly).w, h: bboxOf(L.outPoly).h, rot: 0 }, bboxOf(L.outPoly), L.outOutside, 'screen') : '<span class="muted">–</span>']);
+  if (L.scale) {
+    const cls = L.scale.tag === '1:1' ? 'ok' : 'warn';
+    rows.push(['Scale', `×${fmt(Math.round(L.scale.sx * 1000) / 1000)} horizontal, ×${fmt(Math.round(L.scale.sy * 1000) / 1000)} vertical <span class="chip ${cls}">${L.scale.tag}</span>`]);
+  }
+  if (L.warp) {
+    const w = L.warp;
+    rows.push(['Warp', `${w.mode === 'PM_BEZIER' ? 'Bézier' : 'Linear'} ${w.cols}×${w.rows} grid ${w.valid ? (w.edited ? `<span class="chip accent">edited (max ${fmt(w.dev)} px)</span>` : '<span class="muted">untouched</span>') : '<span class="chip warn">invalid</span>'}${L.homography && L.homography.edited ? ' <span class="chip accent">corner pin edited</span>' : ''}`]);
+  }
+  if (L.contour) rows.push(['Shape', `${L.contour.points.length} points${L.contour.segments ? ` · segments ${esc(L.contour.segments)}` : ''}${L.contour.closed ? '' : ' · open'}`]);
+  const flags = [];
+  if (L.softEdge) flags.push('<span class="chip accent">soft edge</span>');
+  if (L.flip) flags.push(`<span class="chip accent">flip ${({ 1: 'horizontal', 2: 'vertical', 3: 'both' })[L.flip] || L.flip}</span>`);
+  if (L.isKey) flags.push('<span class="chip accent">key</span>');
+  if (L.blackBg) flags.push('<span class="chip accent">black background</span>');
+  if (!L.inputOpacity) flags.push('<span class="chip">ignores input opacity</span>');
+  if (!L.inputBypass) flags.push('<span class="chip">ignores bypass/solo</span>');
+  if (flags.length) rows.push(['Options', flags.join(' ')]);
+  if (L.uniqueId) rows.push(['ID', `<span class="muted">${esc(L.uniqueId)}</span>`]);
+  el.innerHTML = `<h3><span class="swatch" style="background:${L.color}"></span>${esc(L.name)}${state.selected === id ? ' <span class="chip">pinned</span>' : ''}</h3>
+    <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
+}
+
+/* =========================================================================
+   PNG export – test-card style map at full resolution
+   ========================================================================= */
+function exportPanel(p) {
+  const m = state.model, b = p.opts.bounds;
+  const items = p.opts.items.filter(it => isVisible(it.layer));
+  if (!items.length) { toast('Nothing visible to export in this view.', true); return; }
+  const isInput = p.opts.kind === 'input';
+  const title = isInput ? m.name : `${m.name} · ${p.opts.screen.name}`;
+  const canvas = renderMapCanvas({ w: b.w, h: b.h, ox: b.x, oy: b.y, items, title, kind: p.opts.kind });
+  const file = `${safeName(m.name)} - ${isInput ? 'input map' : safeName(p.opts.screen.name)}.png`;
+  canvas.toBlob(blob => {
+    if (!blob) { toast('PNG export failed.', true); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = file; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    toast(`Exported ${file} (${canvas.width} × ${canvas.height})`);
+  }, 'image/png');
+}
+
+function renderMapCanvas({ w, h, ox, oy, items, title, kind }) {
+  const MAX = 16384, MAXPIX = 64e6;
+  let scale = 1;
+  if (w > MAX || h > MAX) scale = Math.min(MAX / w, MAX / h);
+  if (w * h * scale * scale > MAXPIX) scale = Math.min(scale, Math.sqrt(MAXPIX / (w * h)));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.save(); ctx.scale(scale, scale); ctx.translate(-ox, -oy);
+  const minDim = Math.min(w, h);
+  const tile = clamp(Math.round(minDim / 16), 8, 256);
+  const base = clamp(minDim / 22, 10, 200);
+  const lineW = Math.max(1, minDim / 700);
+
+  for (const it of items) {
+    const L = it.layer, bb = it.bb, poly = it.poly;
+    ctx.save();
+    ctx.beginPath(); poly.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.clip();
+    const c1 = `hsl(${L.hue} 95% 50%)`, c2 = `hsl(${L.hue} 95% 26%)`;
+    ctx.fillStyle = c1; ctx.fillRect(bb.x, bb.y, bb.w, bb.h);
+    ctx.fillStyle = c2;
+    const nx = Math.ceil(bb.w / tile), ny = Math.ceil(bb.h / tile);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if ((i + j) & 1) ctx.fillRect(bb.x + i * tile, bb.y + j * tile, tile, tile);
+    ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = lineW;
+    ctx.beginPath(); ctx.arc(bb.x + bb.w / 2, bb.y + bb.h / 2, Math.min(bb.w, bb.h) / 2 * 0.95, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bb.x, bb.y); ctx.lineTo(bb.x + bb.w, bb.y + bb.h); ctx.moveTo(bb.x + bb.w, bb.y); ctx.lineTo(bb.x, bb.y + bb.h); ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = lineW;
+    ctx.beginPath(); poly.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.stroke();
+  }
+  // labels on top of everything; overlapping labels (stacked slices) are pushed downwards
+  const labels = [];
+  for (const it of items) {
+    const L = it.layer, bb = it.bb;
+    if (bb.h < 10 || bb.w < 10) continue;
+    const r = kind === 'input' ? L.input : (L.output || bb);
+    const name = L.name + (L.active ? '' : ' (off)');
+    const sub = `${fmtI(bb.x)}, ${fmtI(bb.y)} // ${fmtI(r.w)} x ${fmtI(r.h)}${r.rot ? ` @ ${Math.round(deg(r.rot))}°` : ''}`;
+    let size = clamp(Math.min(base, bb.h / 3.2), 4, base);
+    size = fitFont(ctx, name, bb.w * 0.9, size, 700);
+    const sizeSub = fitFont(ctx, sub, bb.w * 0.9, size * 0.55, 400);
+    const w = Math.max(textW(ctx, name, size, 700) + size * 0.6, sizeSub >= 3 ? textW(ctx, sub, sizeSub, 400) + sizeSub * 0.6 : 0);
+    const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+    labels.push({ name, sub, size, sizeSub, cx, rect: { x: cx - w / 2, y: cy - 1.07 * size, w, h: 1.62 * size + 0.62 * sizeSub } });
+  }
+  resolveOverlaps(labels.map(l => l.rect), minDim / 200);
+  for (const l of labels) {
+    const cy = l.rect.y + 1.07 * l.size;
+    labelBox(ctx, l.name, l.cx, cy - l.size * 0.45, l.size, 700, '#000', '#fff');
+    if (l.sizeSub >= 3) labelBox(ctx, l.sub, l.cx, cy + l.size * 0.55, l.sizeSub, 400, '#fff', '#000');
+  }
+  // footer: preset name & map size, bottom-right
+  const fs = clamp(minDim / 30, 10, 120);
+  labelBox(ctx, title, ox + w - fs * 0.6, oy + h - fs * 2.55, fs, 400, '#fff', '#000', 'right');
+  labelBox(ctx, `${fmt(w)} x ${fmt(h)}`, ox + w - fs * 0.6, oy + h - fs * 1.05, fs, 400, '#000', '#fff', 'right');
+  ctx.restore();
+  return c;
+}
+function textW(ctx, text, size, weight) {
+  ctx.font = `${weight} ${size}px system-ui, sans-serif`;
+  return ctx.measureText(text).width;
+}
+function fitFont(ctx, text, maxW, size, weight) {
+  ctx.font = `${weight} ${size}px system-ui, sans-serif`;
+  const tw = ctx.measureText(text).width;
+  return tw > maxW ? size * maxW / tw : size;
+}
+function labelBox(ctx, text, x, y, size, weight, bg, fg, align = 'center') {
+  ctx.font = `${weight} ${size}px system-ui, sans-serif`;
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(text).width, pad = size * 0.3;
+  const left = align === 'right' ? x - tw - pad : x - tw / 2 - pad;
+  ctx.fillStyle = bg; ctx.fillRect(left, y - size * 0.62, tw + pad * 2, size * 1.24);
+  ctx.fillStyle = fg; ctx.textAlign = 'left'; ctx.fillText(text, left + pad, y);
+}
+
+/* =========================================================================
+   Loading
+   ========================================================================= */
+function loadText(text, fileName) {
+  try { setModel(buildModel(parseAdvancedOutput(text, fileName))); toast(`Loaded ${fileName}`); }
+  catch (err) { console.error(err); toast(`Could not load ${fileName}: ${err.message}`, true); }
+}
+function loadFile(file) { if (!file) return; file.text().then(t => loadText(t, file.name)); }
+async function loadUrl(url) {
+  try {
+    const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    loadText(await r.text(), decodeURIComponent(url.split('/').pop()));
+  } catch (err) {
+    toast(`Couldn't fetch "${decodeURIComponent(url)}" (${err.message}). Drag the XML file in instead.`, true);
+  }
+}
+let toastTimer = null;
+function toast(msg, isError) {
+  let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg; t.classList.toggle('error', !!isError);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), isError ? 7000 : 3000);
+}
+
+/* ---- wiring ---- */
+$('#btnOpen').addEventListener('click', () => $('#fileInput').click());
+$('#btnOpen2').addEventListener('click', () => $('#fileInput').click());
+$('#fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+$('#btnFit').addEventListener('click', () => state.panels.forEach(p => p.fit()));
+$('#optLabels').addEventListener('change', e => { state.showLabels = e.target.checked; applyVisibility(); });
+$('#optDisabled').addEventListener('change', e => { state.showDisabled = e.target.checked; applyVisibility(); });
+$('#tree').addEventListener('click', e => {
+  const eye = e.target.closest('.eye');
+  if (eye) {
+    e.stopPropagation();
+    if (eye.dataset.eye) { const id = eye.dataset.eye; state.hidden.has(id) ? state.hidden.delete(id) : state.hidden.add(id); }
+    if (eye.dataset.screenEye) { const id = eye.dataset.screenEye; state.hiddenScreens.has(id) ? state.hiddenScreens.delete(id) : state.hiddenScreens.add(id); }
+    applyVisibility(); return;
+  }
+  const row = e.target.closest('.row');
+  if (row) { setSelected(row.dataset.id === state.selected ? null : row.dataset.id); return; }
+  const head = e.target.closest('.screen-head');
+  if (head) head.parentElement.classList.toggle('collapsed');
+});
+$('#tree').addEventListener('pointerover', e => { const row = e.target.closest('.row'); if (row) setHover(row.dataset.id); });
+$('#tree').addEventListener('pointerout', e => { const row = e.target.closest('.row'); if (row && state.hover === row.dataset.id) setHover(null); });
+
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key === 'Escape') setSelected(null);
+  if (e.key === 'f' || e.key === 'F') state.panels.forEach(p => p.fit());
+});
+
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragover', e => { e.preventDefault(); });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); loadFile(e.dataTransfer.files && e.dataTransfer.files[0]); });
+
+const qs = new URLSearchParams(location.search);
+if (qs.get('file')) loadUrl(encodeURI(qs.get('file')));
+</script>
+</body>
+</html>

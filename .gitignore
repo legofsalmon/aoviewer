@@ -1,0 +1,4 @@
+.DS_Store
+.claude/
+# Advanced Output presets contain venue/show data; keep them out of the public repo
+*.xml
