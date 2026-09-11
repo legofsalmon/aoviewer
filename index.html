@@ -98,7 +98,7 @@ body.no-labels .labels{display:none}
 #empty code{background:#0d0f13;padding:2px 6px;border-radius:4px;font-size:12px}
 #empty .actions{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap}
 body.has-model #empty{display:none}
-body:not(.has-model) aside,body:not(.has-model) #content{display:none}
+body:not(.has-model) aside,body:not(.has-model) #content,body:not(.has-model) #btnShare{display:none}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#242a35;border:1px solid var(--border);padding:8px 14px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.4);z-index:9;max-width:70vw}
 .toast.error{border-color:var(--bad)}
 body.dragging::after{content:'Drop the Advanced Output .xml to load it';position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(79,140,255,.15);border:3px dashed var(--accent);font-size:20px;z-index:8;pointer-events:none}
@@ -119,6 +119,7 @@ kbd{background:#0d0f13;border:1px solid var(--border);border-radius:4px;padding:
   <label class="toggle"><input type="checkbox" id="optDisabled" checked> Show disabled</label>
   <button id="btnFit" title="Fit all views (F)">Fit all</button>
   <button id="btnWatch" title="Re-read a file whenever it changes on disk (Chrome / Edge)">Watch file…</button>
+  <button id="btnShare" title="Copy a link that carries this whole setup">Share link</button>
   <button class="primary" id="btnOpen">Open XML…</button>
   <input type="file" id="fileInput" accept=".xml,text/xml,application/xml" hidden>
 </header>
@@ -245,17 +246,15 @@ function parseScreen(el, idx) {
   return { uniqueId: el.getAttribute('uniqueId'), name, enabled, hidden, opacity, device, layers };
 }
 
-function parseRect(el) {
-  if (!el) return null;
-  const pts = pointsOf(el);
-  if (pts.length < 3) return null;
-  const bb = bboxOf(pts);
+function rectFromPts(pts, rot) {
+  if (!pts || pts.length < 3) return null;
   return {
-    pts, rot: num(el.getAttribute('orientation'), 0), bbox: bb,
+    pts, rot: rot || 0, bbox: bboxOf(pts),
     w: dist(pts[0], pts[1]), h: dist(pts[1], pts[2]),
     normalized: pts.every(p => Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1),
   };
 }
+function parseRect(el) { return el ? rectFromPts(pointsOf(el), num(el.getAttribute('orientation'), 0)) : null; }
 
 function decodeSource(raw) {
   const m = /^(\d+):(\d+)$/.exec(raw || '');
@@ -374,6 +373,47 @@ function scaleInfo(L) {
   return { sx, sy, tag };
 }
 
+/* ---- LED-tech checks: whole-pixel placement, overlaps and near-miss gaps between enabled slices ---- */
+const GAP_PX = 8;
+function runChecks(m) {
+  const whole = v => Math.abs(v - Math.round(v)) < 0.01;
+  const offGrid = r => r.pts.some(p => !whole(p.x) || !whole(p.y));
+  const where = r => `${fmt(r.bbox.x)}, ${fmt(r.bbox.y)} · ${fmt(r.w)}×${fmt(r.h)}`;
+  for (const L of m.byId.values()) {
+    L.checks = [];
+    if (L.kind !== 'Slice') continue;
+    if (L.input && !L.input.normalized && offGrid(L.input)) L.checks.push({ kind: 'subpx', text: `input not on whole pixels (${where(L.input)})` });
+    if (L.output && offGrid(L.output)) L.checks.push({ kind: 'subpx', text: `output not on whole pixels (${where(L.output)})` });
+  }
+  for (const s of m.screens) {
+    const items = s.layers.filter(L => L.kind === 'Slice' && L.active && L.outPoly).map(L => ({ L, b: bboxOf(L.outPoly) }));
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      const a = items[i], c = items[j];
+      const ox = Math.min(a.b.x + a.b.w, c.b.x + c.b.w) - Math.max(a.b.x, c.b.x); // > 0 overlap, < 0 distance apart
+      const oy = Math.min(a.b.y + a.b.h, c.b.y + c.b.h) - Math.max(a.b.y, c.b.y);
+      if (ox > 0.01 && oy > 0.01) {
+        const t = `${fmt(ox)}×${fmt(oy)} px`;
+        a.L.checks.push({ kind: 'overlap', text: `overlaps “${c.L.name}” by ${t}` });
+        c.L.checks.push({ kind: 'overlap', text: `overlaps “${a.L.name}” by ${t}` });
+      } else if (ox > 0.01 && -oy > 0.01 && -oy <= GAP_PX) {
+        const t = `${fmt(-oy)} px gap`;
+        a.L.checks.push({ kind: 'gap', text: `${t} to “${c.L.name}” (${a.b.y < c.b.y ? 'below' : 'above'})` });
+        c.L.checks.push({ kind: 'gap', text: `${t} to “${a.L.name}” (${c.b.y < a.b.y ? 'below' : 'above'})` });
+      } else if (oy > 0.01 && -ox > 0.01 && -ox <= GAP_PX) {
+        const t = `${fmt(-ox)} px gap`;
+        a.L.checks.push({ kind: 'gap', text: `${t} to “${c.L.name}” (${a.b.x < c.b.x ? 'right' : 'left'})` });
+        c.L.checks.push({ kind: 'gap', text: `${t} to “${a.L.name}” (${c.b.x < a.b.x ? 'right' : 'left'})` });
+      }
+    }
+  }
+}
+function checkChips(L) {
+  const kinds = [...new Set((L.checks || []).map(c => c.kind))];
+  return kinds.map(k => k === 'gap' ? '<span class="chip bad" title="Gap to a neighbouring slice">gap</span>'
+    : k === 'overlap' ? '<span class="chip warn" title="Overlaps another slice on this screen">overlap</span>'
+    : '<span class="chip warn" title="Not on whole pixels">sub-px</span>').join('');
+}
+
 /* =========================================================================
    Model – ids, colours, derived polygons, warnings
    ========================================================================= */
@@ -410,8 +450,12 @@ function buildModel(m) {
     L.inOutside = L.inPoly ? outsideBox(bboxOf(L.inPoly), m.compBounds) : false;
     L.outOutside = L.outPoly ? outsideBox(bboxOf(L.outPoly), L.screen.bounds) : false;
   }
+  runChecks(m);
   const all = [...m.byId.values()];
   m.stats = {
+    subpx: all.filter(L => L.checks.some(c => c.kind === 'subpx')).length,
+    overlaps: all.filter(L => L.checks.some(c => c.kind === 'overlap')).length,
+    gaps: all.filter(L => L.checks.some(c => c.kind === 'gap')).length,
     screens: m.screens.length,
     slices: all.filter(L => L.kind === 'Slice').length,
     masks: all.filter(L => L.kind === 'Mask').length,
@@ -481,12 +525,15 @@ function buildSummary() {
   if (st.outside) warns.push(`<span class="chip warn">${st.outside} outside bounds</span>`);
   if (st.scaled) warns.push(`<span class="chip warn">${st.scaled} scaled (not 1:1)</span>`);
   if (st.warped) warns.push(`<span class="chip accent">${st.warped} warped</span>`);
+  if (st.subpx) warns.push(`<span class="chip warn" title="Positions or sizes that are not whole pixels resample softly on LED">${st.subpx} sub-pixel</span>`);
+  if (st.overlaps) warns.push(`<span class="chip warn" title="Enabled slices whose outputs overlap on the same screen">${st.overlaps} overlapping</span>`);
+  if (st.gaps) warns.push(`<span class="chip bad" title="Enabled slices with a gap of ${GAP_PX} px or less to a neighbour">${st.gaps} with gaps</span>`);
   if (m.compDerived) warns.push(`<span class="chip warn">composition size derived from slices</span>`);
   const kinds = [`${st.slices} slice${st.slices === 1 ? '' : 's'}`];
   if (st.masks) kinds.push(`${st.masks} mask${st.masks === 1 ? '' : 's'}`);
   if (st.other) kinds.push(`${st.other} other`);
   $('#summary').innerHTML = `
-    <div><b>${esc(m.name)}</b> <span class="chip">${m.format}</span></div>
+    <div><b>${esc(m.name)}</b> <span class="chip">${m.format}</span>${m.shared ? ' <span class="chip accent">from link</span>' : ''}</div>
     <div>${esc(m.version)}</div>
     <div>Composition <b>${fmt(m.comp.w)} × ${fmt(m.comp.h)}</b> · ${st.screens} screen${st.screens === 1 ? '' : 's'} · ${kinds.join(' · ')}</div>
     ${warns.length ? `<div class="warns">${warns.join(' ')}</div>` : ''}`;
@@ -516,6 +563,7 @@ function buildTree() {
           ${L.kind === 'Mask' || L.source.kind === 'composition' ? '' : `<span class="chip accent">${esc(L.source.label)}</span>`}
           ${(L.inOutside || L.outOutside) ? '<span class="chip warn" title="Outside the composition or screen bounds">⚠</span>' : ''}
           ${L.scale && L.scale.tag !== '1:1' ? `<span class="chip warn" title="Output size differs from input size">${esc(L.scale.tag)}</span>` : ''}
+          ${checkChips(L)}
           <span class="dim">${L.output ? `${fmt(L.output.w)}×${fmt(L.output.h)}` : ''}</span>
         </div>`).join('')}
       </div>
@@ -743,6 +791,9 @@ function renderDetails() {
   if (!L.inputOpacity) flags.push('<span class="chip">ignores input opacity</span>');
   if (!L.inputBypass) flags.push('<span class="chip">ignores bypass/solo</span>');
   if (flags.length) rows.push(['Options', flags.join(' ')]);
+  if (L.kind === 'Slice') rows.push(['Checks', L.checks.length
+    ? L.checks.map(c => `<div>${c.kind === 'gap' ? '<span class="chip bad">gap</span>' : c.kind === 'overlap' ? '<span class="chip warn">overlap</span>' : '<span class="chip warn">sub-px</span>'} ${esc(c.text)}</div>`).join('')
+    : '<span class="chip ok">no issues</span>']);
   if (L.uniqueId) rows.push(['ID', `<span class="muted">${esc(L.uniqueId)}</span>`]);
   el.innerHTML = `<h3><span class="swatch" style="background:${L.color}"></span>${esc(L.name)}${state.selected === id ? ' <span class="chip">pinned</span>' : ''}</h3>
     <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
@@ -919,6 +970,96 @@ function renderWatchStatus() {
   $('#watchTime').textContent = watch.updated ? ` · ${watch.updated.toLocaleTimeString()}` : '';
 }
 
+/* ---- Shareable link: the whole setup, compacted and deflated into the URL hash ---- */
+function toCompact(m) {
+  const r2 = v => Math.round(v * 100) / 100;
+  const pts = ps => ps.map(p => [r2(p.x), r2(p.y)]);
+  const rect = r => r ? { p: pts(r.pts), r: r.rot ? Math.round(r.rot * 1e5) / 1e5 : 0 } : null;
+  return {
+    f: 1, n: m.name, v: m.version, t: m.format, c: [m.comp.w, m.comp.h],
+    s: m.screens.map(s => ({
+      n: s.name, e: s.enabled ? 1 : 0, h: s.hidden ? 1 : 0,
+      d: s.device ? { t: s.device.tag, n: s.device.name, i: s.device.deviceId, w: s.device.w, h: s.device.h, f: s.device.fullscreen ? 1 : 0 } : null,
+      l: s.layers.map(L => {
+        const o = { k: L.kind, n: L.name, e: L.enabled ? 1 : 0, s: L.source.raw, i: rect(L.input), o: rect(L.output) };
+        if (L.uniqueId) o.u = L.uniqueId;
+        if (!L.inputOpacity) o.io = 0;
+        if (!L.inputBypass) o.ib = 0;
+        if (L.softEdge) o.se = 1;
+        if (L.flip) o.fl = L.flip;
+        if (L.isKey) o.ky = 1;
+        if (L.blackBg) o.bg = 1;
+        if (L.invert) o.iv = 1;
+        if (L.warp && (L.warp.edited || L.warp.mode !== 'PM_LINEAR')) o.w = { m: L.warp.mode, c: L.warp.cols, r: L.warp.rows, v: pts(L.warp.verts) };
+        if (L.homography && L.homography.edited) o.hg = { s: pts(L.homography.src), d: pts(L.homography.dst) };
+        if (L.contour) o.ct = { p: pts(L.contour.points), s: L.contour.segments, c: L.contour.closed ? 1 : 0 };
+        return o;
+      }),
+    })),
+  };
+}
+function fromCompact(c) {
+  if (!c || c.f !== 1 || !Array.isArray(c.s) || !Array.isArray(c.c)) throw new Error('unrecognised link format');
+  const P = ps => ps.map(([x, y]) => ({ x, y }));
+  const rect = r => r ? rectFromPts(P(r.p), r.r || 0) : null;
+  const screens = c.s.map(s => ({
+    name: s.n, enabled: !!s.e, hidden: !!s.h, opacity: 1,
+    device: s.d ? { tag: s.d.t, type: (s.d.t || '').replace(/^OutputDevice/, '') || s.d.t, name: s.d.n || '', deviceId: s.d.i || '', w: s.d.w || 0, h: s.d.h || 0, fullscreen: !!s.d.f } : null,
+    layers: s.l.map(o => {
+      const L = {
+        kind: o.k, uniqueId: o.u || null, name: o.n, enabled: !!o.e, source: decodeSource(o.s),
+        inputOpacity: o.io !== 0, inputBypass: o.ib !== 0, softEdge: !!o.se, flip: o.fl || 0, isKey: !!o.ky, blackBg: !!o.bg, invert: !!o.iv,
+        input: rect(o.i), output: rect(o.o), warp: null, homography: null, contour: null,
+      };
+      if (o.w) { L.warp = { mode: o.w.m, cols: o.w.c, rows: o.w.r, verts: P(o.w.v) }; Object.assign(L.warp, analyzeWarp(L.warp)); }
+      if (o.hg) L.homography = { src: P(o.hg.s), dst: P(o.hg.d), edited: true };
+      if (o.ct) L.contour = { points: P(o.ct.p), segments: o.ct.s || '', closed: !!o.ct.c };
+      return L;
+    }),
+  }));
+  return { name: c.n, version: c.v, comp: { w: c.c[0], h: c.c[1] }, format: c.t || 'preset', screens, fileName: c.n, shared: true };
+}
+async function deflate(bytes) {
+  const cs = new CompressionStream('deflate-raw'), out = new Response(cs.readable).arrayBuffer();
+  const w = cs.writable.getWriter(); await w.write(bytes); await w.close();
+  return new Uint8Array(await out);
+}
+async function inflate(bytes) {
+  const ds = new DecompressionStream('deflate-raw'), out = new Response(ds.readable).arrayBuffer();
+  const w = ds.writable.getWriter(); await w.write(bytes); await w.close();
+  return new Uint8Array(await out);
+}
+function toBase64url(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+const fromBase64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0));
+async function shareLink() {
+  const m = state.model; if (!m) return;
+  if (typeof CompressionStream !== 'function') { toast('This browser can’t build share links (no CompressionStream).', true); return; }
+  try {
+    const hash = '#s=' + toBase64url(await deflate(new TextEncoder().encode(JSON.stringify(toCompact(m)))));
+    history.replaceState(null, '', hash);
+    const url = location.href.split('#')[0] + hash;
+    let copied = false;
+    try { await navigator.clipboard.writeText(url); copied = true; } catch (err) { /* clipboard blocked: the link is in the address bar */ }
+    toast(`${copied ? 'Link copied to the clipboard' : 'Link is in the address bar'} · ${(url.length / 1024).toFixed(1)} KB${url.length > 8000 ? ' · long links can be cut short by some chat apps' : ''}`);
+  } catch (err) { console.error(err); toast(`Couldn't build the link: ${err.message}`, true); }
+}
+async function loadFromHash() {
+  const mm = /^#s=([A-Za-z0-9_-]+)$/.exec(location.hash);
+  if (!mm) return false;
+  if (typeof DecompressionStream !== 'function') { toast('This browser can’t open shared links (no DecompressionStream).', true); return true; }
+  try {
+    const c = JSON.parse(new TextDecoder().decode(await inflate(fromBase64url(mm[1]))));
+    stopWatch(true);
+    setModel(buildModel(fromCompact(c)));
+    toast(`Opened shared setup “${c.n}”`);
+  } catch (err) { console.error(err); toast(`Couldn't open the shared link: ${err.message}`, true); }
+  return true;
+}
+
 let toastTimer = null;
 function toast(msg, isError) {
   let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
@@ -965,8 +1106,11 @@ window.addEventListener('dragover', e => { e.preventDefault(); });
 window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); loadFile(e.dataTransfer.files && e.dataTransfer.files[0]); });
 
+$('#btnShare').addEventListener('click', shareLink);
+
 const qs = new URLSearchParams(location.search);
-if (qs.get('file')) loadUrl(encodeURI(qs.get('file')));
+loadFromHash().then(found => { if (!found && qs.get('file')) loadUrl(encodeURI(qs.get('file'))); });
+window.addEventListener('hashchange', () => loadFromHash());
 </script>
 </body>
 </html>

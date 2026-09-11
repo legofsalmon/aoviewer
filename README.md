@@ -17,7 +17,7 @@ map refreshes a second or so after Resolume saves. Safari and Firefox don't supp
 and simply don't show the button.
 
 `index.html` also works straight from disk. `?file=name.xml` loads an XML file hosted
-next to the page on start.
+next to the page on start; `#s=…` is a share link.
 
 ## What it shows
 
@@ -29,6 +29,12 @@ next to the page on start.
   eye icons hide items in the views.
 - **Export PNG** – renders a view as a full-resolution test card (checkerboard per
   slice with name, position and size), for the input map or any screen.
+- **LED-tech checks** – flags slices that are not on whole pixels (they resample
+  softly on LED), enabled slices whose outputs overlap on a screen, and near-miss
+  gaps of 8 px or less between neighbours. Chips in the sidebar, details on the slice.
+- **Share link** – packs the whole setup into the page URL (deflated, about 1 KB for
+  a dozen slices) so a colleague can open the map without the file. Needs a browser
+  with CompressionStream (Chrome, Edge, Safari 16.4+, Firefox 113+).
 
 Drag to pan, ⌘/Ctrl + wheel (or trackpad pinch) to zoom, or use the + / − buttons; double-click to fit. `F` fits all views, `Esc` clears the selection.
 
