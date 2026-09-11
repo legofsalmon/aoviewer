@@ -1,7 +1,7 @@
 # AO Viewer – Resolume Arena Advanced Output viewer
 
 A single-file, dependency-free web page that visualises Resolume Arena
-Advanced Output presets (`.xml`). Hosted at <https://ao.letissier.ie>.
+Advanced Output presets (`.xml`). Hosted at <https://aoviewer.letissier.ie>.
 
 ## Use
 
