@@ -10,6 +10,12 @@ the file is parsed in your browser. Presets live in
 `~/Documents/Resolume Arena/Presets/Advanced Output/`; the live setup is
 `~/Documents/Resolume Arena/Preferences/AdvancedOutput.xml` (also supported).
 
+**Watch file** (Chrome / Edge, via the File System Access API) picks a file once and
+re-reads it whenever it changes on disk, keeping your pan/zoom and selection. Point it at
+`Preferences/AdvancedOutput.xml` to follow the setup Resolume is currently outputting; the
+map refreshes a second or so after Resolume saves. Safari and Firefox don't support this
+and simply don't show the button.
+
 `index.html` also works straight from disk. `?file=name.xml` loads an XML file hosted
 next to the page on start.
 

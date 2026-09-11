@@ -103,16 +103,22 @@ body:not(.has-model) aside,body:not(.has-model) #content{display:none}
 .toast.error{border-color:var(--bad)}
 body.dragging::after{content:'Drop the Advanced Output .xml to load it';position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(79,140,255,.15);border:3px dashed var(--accent);font-size:20px;z-index:8;pointer-events:none}
 kbd{background:#0d0f13;border:1px solid var(--border);border-radius:4px;padding:0 4px;font-size:11px}
+.watch{display:flex;align-items:center;gap:6px;font-size:12px;background:#1d3a2a;border:1px solid #2c5a40;border-radius:6px;padding:2px 4px 2px 8px;white-space:nowrap}
+.watch[hidden]{display:none}
+.watch .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.25}}
 </style>
 </head>
 <body>
 <header>
   <div class="brand">AO Viewer <small>Resolume Arena Advanced Output</small></div>
   <span id="fileName"></span>
+  <span id="watchStatus" class="watch" hidden title="Re-read whenever the file changes on disk"><span class="dot"></span>watching <span id="watchName"></span><span id="watchTime" class="muted"></span><button class="small" id="btnStopWatch">Stop</button></span>
   <div class="spacer"></div>
   <label class="toggle"><input type="checkbox" id="optLabels" checked> Labels</label>
   <label class="toggle"><input type="checkbox" id="optDisabled" checked> Show disabled</label>
   <button id="btnFit" title="Fit all views (F)">Fit all</button>
+  <button id="btnWatch" title="Re-read a file whenever it changes on disk (Chrome / Edge)">Watch file…</button>
   <button class="primary" id="btnOpen">Open XML…</button>
   <input type="file" id="fileInput" accept=".xml,text/xml,application/xml" hidden>
 </header>
@@ -126,11 +132,12 @@ kbd{background:#0d0f13;border:1px solid var(--border);border-radius:4px;padding:
     <div class="box">
       <h2>Drop an Advanced Output preset here</h2>
       <p>Resolume Arena saves them as <code>.xml</code> in<br><code>~/Documents/Resolume Arena/Presets/Advanced Output/</code></p>
-      <p>The live setup is also readable from <code>~/Documents/Resolume Arena/Preferences/AdvancedOutput.xml</code></p>
+      <p>The setup currently on the outputs is <code>~/Documents/Resolume Arena/Preferences/AdvancedOutput.xml</code>.<br>Drop it in for a snapshot, or <b>Watch file</b> (Chrome / Edge) to re-read it whenever Resolume saves it.</p>
       <div class="actions">
         <button class="primary" id="btnOpen2">Open XML…</button>
+        <button id="btnWatch2" title="Re-read a file whenever it changes on disk (Chrome / Edge)">Watch file…</button>
       </div>
-      <p style="font-size:12px">Nothing is uploaded: the file is parsed in your browser.</p>
+      <p style="font-size:12px">Nothing is uploaded: files are read and parsed in your browser.</p>
       <p style="margin-top:18px;font-size:12px">Drag to pan · <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + wheel or pinch to zoom · double-click to fit · <kbd>F</kbd> fit all · <kbd>Esc</kbd> clear selection</p>
     </div>
   </div>
@@ -437,14 +444,34 @@ function isVisible(L) {
   return true;
 }
 
-function setModel(model) {
-  state.model = model; state.hover = null; state.selected = null;
-  state.hidden = new Set(); state.hiddenScreens = new Set(); state.panels = [];
+function setModel(model, opts = {}) {
+  const prev = opts.preserve && state.model ? snapshotView() : null; // keep pan/zoom etc. across live re-reads
+  state.model = model; state.hover = null;
+  if (!prev) { state.selected = null; state.hidden = new Set(); state.hiddenScreens = new Set(); }
+  for (const p of state.panels) if (p.ro) p.ro.disconnect();
+  state.panels = [];
   document.body.classList.add('has-model');
   $('#fileName').textContent = model.fileName || model.name;
   document.title = `${model.name} – AO Viewer`;
   buildSummary(); buildTree(); buildPanels();
+  if (prev) restoreView(prev);
   applyVisibility(); applyHighlight();
+}
+const panelKey = p => p.opts.kind === 'input' ? 'input' : 'screen:' + p.opts.screen.index;
+function snapshotView() {
+  return {
+    panels: new Map(state.panels.map(p => [panelKey(p), { s: p.s, tx: p.tx, ty: p.ty, fitScale: p.fitScale, W: p.W, H: p.H }])),
+    collapsed: [...document.querySelectorAll('#tree .screen.collapsed')].map(e => e.dataset.sid),
+    contentScroll: $('#content').scrollTop, treeScroll: $('#tree').scrollTop,
+  };
+}
+function restoreView(prev) {
+  for (const p of state.panels) {
+    const v = prev.panels.get(panelKey(p));
+    if (v && v.W && v.H) { Object.assign(p, v); p.update(); } // same size → the ResizeObserver won't refit
+  }
+  for (const sid of prev.collapsed) { const e = document.querySelector(`#tree .screen[data-sid="${sid}"]`); if (e) e.classList.add('collapsed'); }
+  $('#content').scrollTop = prev.contentScroll; $('#tree').scrollTop = prev.treeScroll;
 }
 
 function buildSummary() {
@@ -586,10 +613,11 @@ function createPanel(parent, opts) {
     p.tx = (p.W - b.w * p.s) / 2 - b.x * p.s; p.ty = (p.H - b.h * p.s) / 2 - b.y * p.s;
     p.update();
   };
-  new ResizeObserver(() => {
+  p.ro = new ResizeObserver(() => {
     const r = svg.getBoundingClientRect();
     if (r.width !== p.W || r.height !== p.H) { p.W = r.width; p.H = r.height; p.fit(); }
-  }).observe(svg);
+  });
+  p.ro.observe(svg);
 
   /* pan / zoom / pick */
   let drag = null;
@@ -688,7 +716,8 @@ function renderDetails() {
   const el = $('#details'), id = state.hover || state.selected, m = state.model;
   if (!m) { el.innerHTML = ''; return; }
   if (!id) { el.innerHTML = '<div class="hint">Hover a slice for details, click to pin it.</div>'; return; }
-  const L = m.byId.get(id); if (!L) return;
+  const L = m.byId.get(id);
+  if (!L) { el.innerHTML = '<div class="hint">Hover a slice for details, click to pin it.</div>'; return; }
   const S = L.screen, rows = [];
   const rectText = (r, bb, outside, what) => r ? `${fmt(bb.x)}, ${fmt(bb.y)} &nbsp;·&nbsp; ${fmt(r.w)} × ${fmt(r.h)}${r.rot ? ` &nbsp;·&nbsp; rotated ${deg(r.rot)}°` : ''}${outside ? ` <span class="chip warn">outside ${what}</span>` : ''}` : '<span class="muted">–</span>';
   rows.push(['Type', `${L.kind}${L.kind === 'Mask' && L.invert ? ' (inverted)' : ''}`]);
@@ -819,19 +848,77 @@ function labelBox(ctx, text, x, y, size, weight, bg, fg, align = 'center') {
 /* =========================================================================
    Loading
    ========================================================================= */
-function loadText(text, fileName) {
-  try { setModel(buildModel(parseAdvancedOutput(text, fileName))); toast(`Loaded ${fileName}`); }
-  catch (err) { console.error(err); toast(`Could not load ${fileName}: ${err.message}`, true); }
+function loadText(text, fileName, opts = {}) {
+  try {
+    setModel(buildModel(parseAdvancedOutput(text, fileName)), opts);
+    if (!opts.quiet) toast(`Loaded ${fileName}`);
+    return true;
+  } catch (err) {
+    if (!opts.quietError) { console.error(err); toast(`Could not load ${fileName}: ${err.message}`, true); }
+    return false;
+  }
 }
-function loadFile(file) { if (!file) return; file.text().then(t => loadText(t, file.name)); }
+function loadFile(file) { if (!file) return; stopWatch(true); file.text().then(t => loadText(t, file.name)); }
 async function loadUrl(url) {
   try {
+    stopWatch(true);
     const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status}`);
     loadText(await r.text(), decodeURIComponent(url.split('/').pop()));
   } catch (err) {
     toast(`Couldn't fetch "${decodeURIComponent(url)}" (${err.message}). Drag the XML file in instead.`, true);
   }
 }
+/* ---- Watch a file: re-read it whenever it changes on disk (File System Access API, Chrome / Edge) ---- */
+const canWatch = typeof window.showOpenFilePicker === 'function';
+const watch = { handle: null, timer: null, last: null, retry: false, busy: false, name: '', updated: null };
+async function startWatch() {
+  if (!canWatch) { toast('Watching a file needs the File System Access API (Chrome or Edge).', true); return; }
+  let handle;
+  try {
+    [handle] = await window.showOpenFilePicker({
+      multiple: false, startIn: 'documents',
+      types: [{ description: 'Resolume Advanced Output XML', accept: { 'text/xml': ['.xml'], 'application/xml': ['.xml'] } }],
+    });
+  } catch (err) { if (err && err.name !== 'AbortError') toast(`Couldn't open file: ${err.message}`, true); return; }
+  stopWatch(true);
+  watch.handle = handle; watch.name = handle.name; watch.last = null; watch.retry = false; watch.updated = null;
+  await pollWatch(true);
+  if (watch.handle) { watch.timer = setInterval(pollWatch, 1000); renderWatchStatus(); }
+}
+async function pollWatch(first) {
+  if (!watch.handle || watch.busy) return;
+  watch.busy = true;
+  try {
+    const f = await watch.handle.getFile();
+    if (f.lastModified !== watch.last || watch.retry) {
+      const text = await f.text();
+      // A read that lands mid-write fails to parse: keep the previous map and retry on the next tick.
+      const ok = loadText(text, f.name, { preserve: !first, quiet: !first, quietError: watch.retry });
+      watch.last = f.lastModified; watch.retry = !ok;
+      if (ok) { watch.updated = new Date(); renderWatchStatus(); }
+      else if (first) stopWatch(true);
+    }
+  } catch (err) {
+    console.error(err);
+    toast(`Stopped watching ${watch.name}: ${err.message}`, true);
+    stopWatch(true);
+  } finally { watch.busy = false; }
+}
+function stopWatch(silent) {
+  if (watch.timer) clearInterval(watch.timer);
+  const was = watch.handle;
+  watch.handle = null; watch.timer = null; watch.last = null; watch.retry = false;
+  renderWatchStatus();
+  if (was && !silent) toast(`Stopped watching ${watch.name}`);
+}
+function renderWatchStatus() {
+  const el = $('#watchStatus');
+  el.hidden = !watch.handle;
+  if (!watch.handle) return;
+  $('#watchName').textContent = watch.name;
+  $('#watchTime').textContent = watch.updated ? ` · ${watch.updated.toLocaleTimeString()}` : '';
+}
+
 let toastTimer = null;
 function toast(msg, isError) {
   let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
@@ -843,6 +930,10 @@ function toast(msg, isError) {
 $('#btnOpen').addEventListener('click', () => $('#fileInput').click());
 $('#btnOpen2').addEventListener('click', () => $('#fileInput').click());
 $('#fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+$('#btnWatch').addEventListener('click', startWatch);
+$('#btnWatch2').addEventListener('click', startWatch);
+$('#btnStopWatch').addEventListener('click', () => stopWatch());
+if (!canWatch) { $('#btnWatch').hidden = true; $('#btnWatch2').hidden = true; }
 $('#btnFit').addEventListener('click', () => state.panels.forEach(p => p.fit()));
 $('#optLabels').addEventListener('change', e => { state.showLabels = e.target.checked; applyVisibility(); });
 $('#optDisabled').addEventListener('change', e => { state.showDisabled = e.target.checked; applyVisibility(); });
