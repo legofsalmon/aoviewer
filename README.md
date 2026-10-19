@@ -38,6 +38,17 @@ next to the page on start; `#s=…` is a share link.
 
 Drag to pan, ⌘/Ctrl + wheel (or trackpad pinch) to zoom, or use the + / − buttons; double-click to fit. `F` fits all views, `Esc` clears the selection.
 
+## Design system
+
+The page follows the studio's shared design system
+([legofsalmon/design-system](https://github.com/legofsalmon/design-system), private): its
+colour roles, compact density, components and motion are inlined in `index.html` between
+`/* ds:tokens:start */ … /* ds:components:end */` markers, so the page stays one
+dependency-free file. Don't edit inside the markers; with the design system checked out
+beside this repository, `python3 scripts/design-system.py --sync` refills them, and
+`--check` (run in CI) fails if a block was edited by hand or the page reads a role the
+system doesn't define. The slices' colours on the maps are content and stay the page's own.
+
 ## Deploy
 
 Static site, no build step: point Vercel (or any static host) at the repo root.
