@@ -45,9 +45,10 @@ The page follows the studio's shared design system
 colour roles, compact density, components and motion are inlined in `index.html` between
 `/* ds:tokens:start */ … /* ds:components:end */` markers, so the page stays one
 dependency-free file. Don't edit inside the markers; with the design system checked out
-beside this repository, `python3 scripts/design-system.py --sync` refills them, and
-`--check` (run in CI) fails if a block was edited by hand or the page reads a role the
-system doesn't define. The slices' colours on the maps are content and stay the page's own.
+beside this repository, `python3 scripts/ds/ds_check.py index.html scripts/ds --sync`
+refills them. Without `--sync` (as CI runs it, with `--reads index.html`) it fails if a
+block was edited by hand or the page reads a role the system doesn't define, and warns
+when the copy is behind the published design system. The slices' colours on the maps are content and stay the page's own.
 
 ## Deploy
 
